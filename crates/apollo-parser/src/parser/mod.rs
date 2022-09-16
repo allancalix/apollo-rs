@@ -7,7 +7,7 @@ pub(crate) mod grammar;
 
 use std::{cell::RefCell, fmt, rc::Rc};
 
-use crate::{lexer::Lexer, Error, Token, TokenKind};
+use crate::{lexer::LexerIterator, Error, Token, TokenKind};
 
 pub use generated::syntax_kind::SyntaxKind;
 pub use language::{SyntaxElement, SyntaxNode, SyntaxNodeChildren, SyntaxNodePtr, SyntaxToken};
@@ -70,9 +70,9 @@ pub(crate) use token_text::TokenText;
 /// let document = ast.document();
 /// ```
 #[derive(Debug)]
-pub struct Parser {
+pub struct Parser<'a> {
     /// Input tokens, including whitespace, in *reverse* order.
-    tokens: Vec<Token>,
+    lexer: LexerIterator<'a>,
     /// The in-progress tree.
     builder: Rc<RefCell<SyntaxTreeBuilder>>,
     /// The list of syntax errors we've accumulated so far.
@@ -81,39 +81,27 @@ pub struct Parser {
     recursion_limit: LimitTracker,
     /// Accept parsing errors?
     accept_errors: bool,
+    current_token: Option<Token>,
 }
 
-impl Parser {
+impl<'a> Parser<'a> {
     /// Create a new instance of a parser given an input string.
-    pub fn new(input: &str) -> Self {
-        let lexer = Lexer::new(input);
-
-        let mut tokens = Vec::new();
-        let mut errors = Vec::new();
-
-        for s in lexer.tokens().iter().cloned() {
-            tokens.push(s);
-        }
-
-        for e in lexer.errors().cloned() {
-            errors.push(e);
-        }
-
-        tokens.reverse();
-        errors.reverse();
+    pub fn new(input: &'a str) -> Self {
+        let lexer = LexerIterator::new(input);
 
         Self {
-            tokens,
+            lexer,
             builder: Rc::new(RefCell::new(SyntaxTreeBuilder::new())),
-            errors,
+            errors: Vec::new(),
             recursion_limit: Default::default(),
             accept_errors: true,
+            current_token: None,
         }
     }
 
     /// Create a new resource limited instance of a parser given an input string
     /// and a recursion limit.
-    pub fn with_recursion_limit(input: &str, recursion_limit: usize) -> Self {
+    pub fn with_recursion_limit(input: &'a str, recursion_limit: usize) -> Self {
         let mut parser = Parser::new(input);
         parser.recursion_limit = LimitTracker::new(recursion_limit);
         parser
@@ -171,10 +159,7 @@ impl Parser {
 
     /// Consume a token from the lexer and add it to the AST.
     fn eat(&mut self, kind: SyntaxKind) {
-        let token = self
-            .tokens
-            .pop()
-            .expect("Could not eat a token from the AST");
+        let token = self.pop();
         self.builder.borrow_mut().token(kind, token.data());
     }
 
@@ -243,11 +228,29 @@ impl Parser {
         }
     }
 
+    /// gets the next token from the lexer
+    fn next_token(&mut self) -> Token {
+        for res in &mut self.lexer {
+            match res {
+                Err(e) => {
+                    self.errors.push(e);
+                }
+                Ok(token) => {
+                    return token;
+                }
+            }
+        }
+
+        panic!("Could not pop a token from the lexer")
+    }
+
     /// Consume a token from the lexer.
     pub(crate) fn pop(&mut self) -> Token {
-        self.tokens
-            .pop()
-            .expect("Could not pop a token from the AST")
+        if let Some(token) = self.current_token.take() {
+            return token;
+        }
+
+        self.next_token()
     }
 
     /// Insert a token into the AST.
@@ -270,47 +273,48 @@ impl Parser {
     }
 
     /// Peek the next Token and return its TokenKind.
-    pub(crate) fn peek(&self) -> Option<TokenKind> {
-        self.tokens.last().map(|token| token.kind())
+    pub(crate) fn peek(&mut self) -> Option<TokenKind> {
+        self.peek_token().map(|token| token.kind())
     }
 
     /// Peek the next Token and return it.
-    pub(crate) fn peek_token(&self) -> Option<&Token> {
-        self.tokens.last()
+    pub(crate) fn peek_token(&mut self) -> Option<&Token> {
+        if self.current_token.is_none() {
+            self.current_token = Some(self.next_token());
+        }
+        self.current_token.as_ref()
     }
 
     /// Peek Token `n` and return it.
-    pub(crate) fn peek_token_n(&self, n: usize) -> Option<&Token> {
-        self.tokens
-            .iter()
-            .rev()
-            .filter(|token| !matches!(token.kind(), TokenKind::Whitespace | TokenKind::Comment))
-            .nth(n - 1)
+    pub(crate) fn peek_token_n(&self, n: usize) -> Option<Token> {
+        self.peek_n_inner(n)
     }
 
     /// Peek Token `n` and return its TokenKind.
     pub(crate) fn peek_n(&self, n: usize) -> Option<TokenKind> {
-        self.tokens
-            .iter()
-            .rev()
-            .filter(|token| !matches!(token.kind(), TokenKind::Whitespace | TokenKind::Comment))
-            .nth(n - 1)
-            .map(|token| token.kind())
+        self.peek_n_inner(n).map(|token| token.kind())
     }
 
     /// Peek next Token's `data` property.
-    pub(crate) fn peek_data(&self) -> Option<String> {
-        self.tokens.last().map(|token| token.data().to_string())
+    pub(crate) fn peek_data(&mut self) -> Option<String> {
+        self.peek_token().map(|token| token.data().to_string())
     }
 
     /// Peek `n` Token's `data` property.
     pub(crate) fn peek_data_n(&self, n: usize) -> Option<String> {
-        self.tokens
+        self.peek_n_inner(n).map(|token| token.data().to_string())
+    }
+
+    fn peek_n_inner(&self, n: usize) -> Option<Token> {
+        self.current_token
             .iter()
             .rev()
+            .cloned()
+            .map(Result::Ok)
+            .chain(self.lexer.clone())
+            .filter_map(Result::ok)
             .filter(|token| !matches!(token.kind(), TokenKind::Whitespace | TokenKind::Comment))
             .nth(n - 1)
-            .map(|token| token.data().to_string())
     }
 }
 
