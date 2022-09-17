@@ -1,6 +1,0 @@
-"""
-Input Filter with title fitlering
-"""
-input Filter {
-    title: String
-}

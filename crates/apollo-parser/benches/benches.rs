@@ -25,7 +25,7 @@ fn parse_query(query: &str) {
 }
 
 fn bench_parser_peek_n(c: &mut Criterion) {
-    let query = "query ExampleQuery($topProductsFirst: Int) {\n  me { \n    id\n  }\n  topProducts(first:  $topProductsFirst) {\n    name\n    price\n    inStock\n weight\n test test test test test test test test test test test test }\n}";
+    let query = include_str!("test-compressed.graphql");
 
     c.bench_function("parser_peek_n", move |b| b.iter(|| parse_query(query)));
 }
