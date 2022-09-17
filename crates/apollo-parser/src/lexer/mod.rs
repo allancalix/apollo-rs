@@ -81,6 +81,8 @@ impl<'a> Cursor<'a> {
             Start,
             Ident,
             StringLiteral,
+            StringLiteralStart,
+            BlockStringLiteral,
             StringLiteralBackslash,
             IntLiteral,
             FloatLiteral,
@@ -103,7 +105,7 @@ impl<'a> Cursor<'a> {
                         token.index += 1;
                         return Ok(token);
                     }
-                    State::StringLiteral => {
+                    State::StringLiteral | State::StringLiteralStart => {
                         return Err(Error::new(
                             "unexpected end of data while lexing string value",
                             "\"".to_string(),
@@ -134,7 +136,7 @@ impl<'a> Cursor<'a> {
                     match c {
                         '"' => {
                             token.kind = TokenKind::StringValue;
-                            state = State::StringLiteral;
+                            state = State::StringLiteralStart;
                         }
                         '#' => {
                             token.kind = TokenKind::Comment;
@@ -230,7 +232,7 @@ impl<'a> Cursor<'a> {
                             token.data = self.current_str();
                             return Ok(token);
                         }
-                        c => return Err(Error::new("Unexpected character", c.to_string())),
+                        c => return Err(Error::new(format!("Unexpected character \"{}\"", c), c.to_string())),
                     };
                 }
                 State::Ident => match c {
@@ -249,6 +251,45 @@ impl<'a> Cursor<'a> {
                         break;
                     }
                 },
+                State::BlockStringLiteral => match c {
+                    '"' => {
+                        if self.eatc('"') {
+                            if self.eatc('"') {
+                                token.data = self.current_str();
+
+                                break;
+                            }
+
+                        }
+                    }
+                    curr if is_source_char(curr) => {},
+                    _ => break,
+                }
+                State::StringLiteralStart => match c {
+                    '"' => {
+                        if self.eatc('"') {
+                            state = State::BlockStringLiteral;
+
+                            continue;
+                        }
+
+                        if self.pending() {
+                            token.data = self.prev_str();
+                        } else {
+                            token.data = self.current_str();
+                        }
+
+                        break;
+                    },
+                    '\\' => {
+                        state = State::StringLiteralBackslash;
+                    }
+                    _ => {
+                        state = State::StringLiteral;
+
+                        continue;
+                    }
+                }
                 State::StringLiteral => match c {
                     '"' => {
                         token.data = self.current_str();

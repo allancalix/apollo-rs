@@ -3,29 +3,29 @@ use criterion::*;
 
 fn parse_query(query: &str) {
     let parser = apollo_parser::Parser::new(query);
-    let tree = parser.parse();
+    // let tree = parser.parse();
 
-    if tree.errors().len() != 0 {
-        panic!("error parsing query: {:?}", tree.errors());
-    }
-    let document = tree.document();
+    // if tree.errors().len() != 0 {
+    //     panic!("error parsing query: {:?}", tree.errors());
+    // }
+    // let document = tree.document();
 
-    for definition in document.definitions() {
-        if let ast::Definition::OperationDefinition(operation) = definition {
-            let selection_set = operation
-                .selection_set()
-                .expect("the node SelectionSet is not optional in the spec; qed");
-            for selection in selection_set.selections() {
-                if let ast::Selection::Field(field) = selection {
-                    let _selection_set = field.selection_set();
-                }
-            }
-        }
-    }
+    // for definition in document.definitions() {
+    //     if let ast::Definition::OperationDefinition(operation) = definition {
+    //         let selection_set = operation
+    //             .selection_set()
+    //             .expect("the node SelectionSet is not optional in the spec; qed");
+    //         for selection in selection_set.selections() {
+    //             if let ast::Selection::Field(field) = selection {
+    //                 let _selection_set = field.selection_set();
+    //             }
+    //         }
+    //     }
+    // }
 }
 
 fn bench_parser_peek_n(c: &mut Criterion) {
-    let query = include_str!("test-compressed.graphql");
+    let query = include_str!("tes.graphql");
 
     c.bench_function("parser_peek_n", move |b| b.iter(|| parse_query(query)));
 }

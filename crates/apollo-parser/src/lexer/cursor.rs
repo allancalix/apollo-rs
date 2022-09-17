@@ -53,6 +53,10 @@ impl<'a> Cursor<'a> {
         self.index
     }
 
+    pub(crate) fn pending(&self) -> bool {
+        self.pending.is_some()
+    }
+
     pub(crate) fn pending_len(&self) -> usize {
         self.offset - self.index
     }
@@ -100,6 +104,26 @@ impl<'a> Cursor<'a> {
         self.offset = pos;
 
         Some(c)
+    }
+
+    /// Moves to the next character.
+    pub(crate) fn eatc(&mut self, c: char) -> bool {
+        if self.pending.is_some() {
+            panic!("dont call eatc when a character is pending");
+        }
+
+        if let Some((pos, c_in)) = self.chars.next() {
+            self.prev = self.offset;
+            self.offset = pos;
+
+            if c_in == c {
+                return true;
+            }
+
+            self.pending = Some(c_in);
+        }
+
+        false
     }
 
     pub(crate) fn drain(&mut self) {
