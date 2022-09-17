@@ -70,9 +70,10 @@ pub(crate) use token_text::TokenText;
 /// let document = ast.document();
 /// ```
 #[derive(Debug)]
-pub struct Parser {
+pub struct Parser<'a> {
+    input: &'a str,
     /// Input tokens, including whitespace, in *reverse* order.
-    tokens: Vec<Token>,
+    tokens: Vec<Token<'a>>,
     /// The in-progress tree.
     builder: Rc<RefCell<SyntaxTreeBuilder>>,
     /// The list of syntax errors we've accumulated so far.
@@ -83,26 +84,18 @@ pub struct Parser {
     accept_errors: bool,
 }
 
-impl Parser {
+impl<'a> Parser<'a> {
     /// Create a new instance of a parser given an input string.
-    pub fn new(input: &str) -> Self {
+    pub fn new(input: &'a str) -> Self {
         let lexer = Lexer::new(input);
 
-        let mut tokens = Vec::new();
-        let mut errors = Vec::new();
-
-        for s in lexer.tokens().iter().cloned() {
-            tokens.push(s);
-        }
-
-        for e in lexer.errors().cloned() {
-            errors.push(e);
-        }
+        let (mut tokens, mut errors) = lexer.into_parts();
 
         tokens.reverse();
         errors.reverse();
 
         Self {
+            input,
             tokens,
             builder: Rc::new(RefCell::new(SyntaxTreeBuilder::new())),
             errors,
@@ -113,7 +106,7 @@ impl Parser {
 
     /// Create a new resource limited instance of a parser given an input string
     /// and a recursion limit.
-    pub fn with_recursion_limit(input: &str, recursion_limit: usize) -> Self {
+    pub fn with_recursion_limit(input: &'a str, recursion_limit: usize) -> Self {
         let mut parser = Parser::new(input);
         parser.recursion_limit = LimitTracker::new(recursion_limit);
         parser
@@ -212,8 +205,12 @@ impl Parser {
     /// Consume the next token if it is `kind` or emit an error
     /// otherwise.
     pub(crate) fn expect(&mut self, token: TokenKind, kind: SyntaxKind) {
-        let current = self.current().clone();
-        let data = current.data().to_string();
+        let (data, index) = {
+            let current = self.current().clone();
+
+            (current.data().to_string(), current.index())
+
+        };
 
         if self.at(token) {
             self.bump(kind);
@@ -223,7 +220,7 @@ impl Parser {
         let err = Error::with_loc(
             format!("expected {:?}, got {}", kind, data),
             data,
-            current.index(),
+            index,
         );
 
         self.push_err(err);
@@ -244,7 +241,7 @@ impl Parser {
     }
 
     /// Consume a token from the lexer.
-    pub(crate) fn pop(&mut self) -> Token {
+    pub(crate) fn pop(&mut self) -> Token<'a> {
         self.tokens
             .pop()
             .expect("Could not pop a token from the AST")

@@ -28,14 +28,14 @@ pub use token_kind::TokenKind;
 ///
 /// let tokens = lexer.tokens();
 /// ```
-pub struct Lexer {
-    tokens: Vec<Token>,
+pub struct Lexer<'a> {
+    tokens: Vec<Token<'a>>,
     errors: Vec<Error>,
 }
 
-impl Lexer {
+impl<'a> Lexer<'a> {
     /// Create a new instance of `Lexer`.
-    pub fn new(mut input: &str) -> Self {
+    pub fn new(input: &'a str) -> Self {
         let mut tokens = Vec::new();
         let mut errors = Vec::new();
 
@@ -44,20 +44,23 @@ impl Lexer {
             let r = c.new_advance();
 
             match r {
-                Ok(token) => {
-                    match token.kind() {
-                        TokenKind::Eof => {
-                            tokens.push(token);
-                            break;
-                        }
-                        _ => tokens.push(token),
+                Ok(token) => match token.kind() {
+                    TokenKind::Eof => {
+                        tokens.push(token);
+                        break;
                     }
-                }
+                    _ => tokens.push(token),
+                },
                 Err(e) => errors.push(e),
             }
         }
 
         Self { tokens, errors }
+    }
+
+    /// Take ownership of lexer parts.
+    pub fn into_parts(self) -> (Vec<Token<'a>>, Vec<Error>) {
+        (self.tokens, self.errors)
     }
 
     /// Get a reference to the lexer's tokens.
@@ -71,8 +74,8 @@ impl Lexer {
     }
 }
 
-impl Cursor<'_> {
-    fn new_advance(&mut self) -> Result<Token, Error> {
+impl<'a> Cursor<'a> {
+    fn new_advance(&mut self) -> Result<Token<'a>, Error> {
         #[derive(Debug)]
         enum State {
             Start,
@@ -89,43 +92,41 @@ impl Cursor<'_> {
         }
 
         let mut state = State::Start;
-        let mut token = Token::new(TokenKind::Eof, "EOF".into());
+        let mut token = Token::new(TokenKind::Eof, "EOF");
 
         token.index = self.index();
         loop {
             let c = match self.bump() {
                 Some(c) => c,
-                None => {
-                    match state {
-                        State::Start => {
-                            token.index += 1;
-                            return Ok(token);
-                        }
-                        State::StringLiteral => {
-                            return Err(Error::new(
-                                    "unexpected end of data while lexing string value",
-                                    "\"".to_string(),
-                                    ));
-                        }
-                        State::SpreadOperator => {
-                            let curr = self.current_str();
-                            return Err(Error::new(
-                                    "Unterminated spread operator",
-                                    format!("{}", curr),
-                            ));
-                        }
-                        _ => {
-                            if let Some(mut err) = self.err() {
-                                err.data = self.current_str().to_string();
-                                return Err(err);
-                            }
-
-                            token.data = self.current_str().to_string();
-
-                            return Ok(token);
-                        }
+                None => match state {
+                    State::Start => {
+                        token.index += 1;
+                        return Ok(token);
                     }
-                }
+                    State::StringLiteral => {
+                        return Err(Error::new(
+                            "unexpected end of data while lexing string value",
+                            "\"".to_string(),
+                        ));
+                    }
+                    State::SpreadOperator => {
+                        let curr = self.current_str();
+                        return Err(Error::new(
+                            "Unterminated spread operator",
+                            format!("{}", curr),
+                        ));
+                    }
+                    _ => {
+                        if let Some(mut err) = self.err() {
+                            err.data = self.current_str().to_string();
+                            return Err(err);
+                        }
+
+                        token.data = self.current_str();
+
+                        return Ok(token);
+                    }
+                },
             };
 
             match state {
@@ -134,7 +135,7 @@ impl Cursor<'_> {
                         '"' => {
                             token.kind = TokenKind::StringValue;
                             state = State::StringLiteral;
-                        },
+                        }
                         '#' => {
                             token.kind = TokenKind::Comment;
                             state = State::Comment;
@@ -142,15 +143,15 @@ impl Cursor<'_> {
                         '.' => {
                             token.kind = TokenKind::Spread;
                             state = State::SpreadOperator;
-                        },
+                        }
                         c if is_whitespace(c) => {
                             token.kind = TokenKind::Whitespace;
                             state = State::Whitespace;
-                        },
+                        }
                         c if is_ident_char(c) => {
                             token.kind = TokenKind::Name;
                             state = State::Ident;
-                        },
+                        }
                         '+' | '-' => {
                             token.kind = TokenKind::Int;
                             state = State::PlusMinus;
@@ -158,246 +159,223 @@ impl Cursor<'_> {
                         c if is_digit_char(c) => {
                             token.kind = TokenKind::Int;
                             state = State::IntLiteral;
-                        },
+                        }
                         '!' => {
                             token.kind = TokenKind::Bang;
-                            token.data = self.current_str().to_string();
+                            token.data = self.current_str();
                             return Ok(token);
                         }
                         '$' => {
                             token.kind = TokenKind::Dollar;
-                            token.data = self.current_str().to_string();
+                            token.data = self.current_str();
                             return Ok(token);
                         }
                         '&' => {
                             token.kind = TokenKind::Amp;
-                            token.data = self.current_str().to_string();
+                            token.data = self.current_str();
                             return Ok(token);
                         }
                         '(' => {
                             token.kind = TokenKind::LParen;
-                            token.data = self.current_str().to_string();
+                            token.data = self.current_str();
                             return Ok(token);
                         }
                         ')' => {
                             token.kind = TokenKind::RParen;
-                            token.data = self.current_str().to_string();
+                            token.data = self.current_str();
                             return Ok(token);
                         }
                         ':' => {
                             token.kind = TokenKind::Colon;
-                            token.data = self.current_str().to_string();
+                            token.data = self.current_str();
                             return Ok(token);
                         }
                         ',' => {
                             token.kind = TokenKind::Comma;
-                            token.data = self.current_str().to_string();
+                            token.data = self.current_str();
                             return Ok(token);
                         }
                         '=' => {
                             token.kind = TokenKind::Eq;
-                            token.data = self.current_str().to_string();
+                            token.data = self.current_str();
                             return Ok(token);
                         }
                         '@' => {
                             token.kind = TokenKind::At;
-                            token.data = self.current_str().to_string();
+                            token.data = self.current_str();
                             return Ok(token);
                         }
                         '[' => {
                             token.kind = TokenKind::LBracket;
-                            token.data = self.current_str().to_string();
+                            token.data = self.current_str();
                             return Ok(token);
                         }
                         ']' => {
                             token.kind = TokenKind::RBracket;
-                            token.data = self.current_str().to_string();
+                            token.data = self.current_str();
                             return Ok(token);
                         }
                         '{' => {
                             token.kind = TokenKind::LCurly;
-                            token.data = self.current_str().to_string();
+                            token.data = self.current_str();
                             return Ok(token);
                         }
                         '|' => {
                             token.kind = TokenKind::Pipe;
-                            token.data = self.current_str().to_string();
+                            token.data = self.current_str();
                             return Ok(token);
                         }
                         '}' => {
                             token.kind = TokenKind::RCurly;
-                            token.data = self.current_str().to_string();
+                            token.data = self.current_str();
                             return Ok(token);
                         }
                         c => return Err(Error::new("Unexpected character", c.to_string())),
                     };
                 }
-                State::Ident => {
-                    match c {
-                        curr if is_ident_char(curr) || is_digit_char(curr) => {}
-                        _ => {
-                            token.data = self.prev_str().to_string();
+                State::Ident => match c {
+                    curr if is_ident_char(curr) || is_digit_char(curr) => {}
+                    _ => {
+                        token.data = self.prev_str();
 
-                            break
-                        },
+                        break;
                     }
-                }
-                State::Whitespace => {
-                    match c {
-                        curr if is_whitespace(curr) => {},
-                        _ => {
-                            token.data = self.prev_str().to_string();
+                },
+                State::Whitespace => match c {
+                    curr if is_whitespace(curr) => {}
+                    _ => {
+                        token.data = self.prev_str();
 
-                            break
-                        }
+                        break;
                     }
-                }
-                State::StringLiteral => {
-                    match c {
-                        '"' => {
-                            token.data = self.current_str().to_string();
-                            
-                            break
-                        }
-                        curr if is_line_terminator(curr) => {
-                            self.drain();
+                },
+                State::StringLiteral => match c {
+                    '"' => {
+                        token.data = self.current_str();
 
-                            token.data = self.prev_str().to_string();
-                            self.add_err(Error::new(
-                                    "unterminated string value",
-                                    "".to_string(),
-                                    ));
+                        break;
+                    }
+                    curr if is_line_terminator(curr) => {
+                        self.drain();
 
-                            break
-                        },
-                        '\\' => {
-                            state = State::StringLiteralBackslash;
-                        }
-                        curr if is_source_char(curr) => {},
-                        _ => {
-                            token.data = self.current_str().to_string();
-                            
-                            break
-                        }
-                    }
-                }
-                State::StringLiteralBackslash => {
-                    match c {
-                        curr if is_escaped_char(curr) => {
-                            state = State::StringLiteral;
-                        }
-                        'u' => {
-                            state = State::StringLiteral;
-                        }
-                        _ => {
-                            self.add_err(Error::new("unexpected escaped character", c.to_string()));
+                        token.data = self.prev_str();
+                        self.add_err(Error::new("unterminated string value", "".to_string()));
 
-                            state = State::StringLiteral;
-                        },
+                        break;
                     }
-                }
-                State::IntLiteral => {
-                    match c {
-                        curr if is_digit_char(curr) => {},
-                        '.' => {
-                            token.kind = TokenKind::Float;
-                            state = State::FloatLiteral;
-                        },
-                        'e' | 'E' => {
-                            token.kind = TokenKind::Float;
-                            state = State::ExponentLiteral;
-                        }
-                        _ => {
-                            token.data = self.prev_str().to_string();
+                    '\\' => {
+                        state = State::StringLiteralBackslash;
+                    }
+                    curr if is_source_char(curr) => {}
+                    _ => {
+                        token.data = self.current_str();
 
-                            break
-                        },
+                        break;
                     }
-                }
-                State::FloatLiteral => {
-                    match c {
-                        curr if is_digit_char(curr) => {},
-                        '.' => {
-                            self.add_err(Error::new(
-                                format!("Unexpected character `{}`", c),
-                                c.to_string(),
-                            ));
+                },
+                State::StringLiteralBackslash => match c {
+                    curr if is_escaped_char(curr) => {
+                        state = State::StringLiteral;
+                    }
+                    'u' => {
+                        state = State::StringLiteral;
+                    }
+                    _ => {
+                        self.add_err(Error::new("unexpected escaped character", c.to_string()));
 
-                            continue;
-                        },
-                        'e' | 'E' => {
-                            state = State::ExponentLiteral;
-                        }
-                        _ => {
-                            token.data = self.prev_str().to_string();
+                        state = State::StringLiteral;
+                    }
+                },
+                State::IntLiteral => match c {
+                    curr if is_digit_char(curr) => {}
+                    '.' => {
+                        token.kind = TokenKind::Float;
+                        state = State::FloatLiteral;
+                    }
+                    'e' | 'E' => {
+                        token.kind = TokenKind::Float;
+                        state = State::ExponentLiteral;
+                    }
+                    _ => {
+                        token.data = self.prev_str();
 
-                            break
-                        }
+                        break;
                     }
-                }
-                State::ExponentLiteral => {
-                    match c {
-                        curr if is_digit_char(curr) => {
-                            state = State::FloatLiteral;
-                        },
-                        '+' | '-' => {
-                            state = State::FloatLiteral;
-                        },
-                        _ => {
-                                let err = self.current_str();
-                                return Err(Error::new(
-                                    format!("Unexpected character `{}`", err),
-                                    err.to_string(),
-                                ));
-                        }
-                    }
-                }
-                State::SpreadOperator => {
-                    match c {
-                        '.' => {
-                            if self.pending_len() == 2 {
-                                token.data = self.current_str().to_string();
-                                return Ok(token);
-                            }
-                        }
-                        _ => {
-                            let curr = self.current_str();
-                            self.add_err(Error::new(
-                                    "Unterminated spread operator",
-                                    format!("{}", curr),
-                            ))
-                        }
-                    }
-                }
-                State::PlusMinus => {
-                    match c {
-                        curr if is_digit_char(curr) => {
-                            state = State::IntLiteral;
-                        },
-                        _ => {
-                            let curr = self.current_str();
-                            return Err(Error::new(
-                                format!("Unexpected character `{}`", curr),
-                                curr.to_string(),
-                            ));
-                        }
-                    }
-                }
-                State::Comment => {
-                    match c {
-                        curr if is_line_terminator(curr) => {
-                            token.data = self.current_str().to_string();
+                },
+                State::FloatLiteral => match c {
+                    curr if is_digit_char(curr) => {}
+                    '.' => {
+                        self.add_err(Error::new(
+                            format!("Unexpected character `{}`", c),
+                            c.to_string(),
+                        ));
 
-                            break;
-                        }
-                        _ => {},
+                        continue;
                     }
+                    'e' | 'E' => {
+                        state = State::ExponentLiteral;
+                    }
+                    _ => {
+                        token.data = self.prev_str();
+
+                        break;
+                    }
+                },
+                State::ExponentLiteral => match c {
+                    curr if is_digit_char(curr) => {
+                        state = State::FloatLiteral;
+                    }
+                    '+' | '-' => {
+                        state = State::FloatLiteral;
+                    }
+                    _ => {
+                        let err = self.current_str();
+                        return Err(Error::new(
+                            format!("Unexpected character `{}`", err),
+                            err.to_string(),
+                        ));
+                    }
+                },
+                State::SpreadOperator => match c {
+                    '.' => {
+                        if self.pending_len() == 2 {
+                            token.data = self.current_str();
+                            return Ok(token);
+                        }
+                    }
+                    _ => {
+                        let curr = self.current_str();
+                        self.add_err(Error::new(
+                            "Unterminated spread operator",
+                            format!("{}", curr),
+                        ))
+                    }
+                },
+                State::PlusMinus => match c {
+                    curr if is_digit_char(curr) => {
+                        state = State::IntLiteral;
+                    }
+                    _ => {
+                        let curr = self.current_str();
+                        return Err(Error::new(
+                            format!("Unexpected character `{}`", curr),
+                            curr.to_string(),
+                        ));
+                    }
+                },
+                State::Comment => match c {
+                    curr if is_line_terminator(curr) => {
+                        token.data = self.current_str();
+
+                        break;
+                    }
+                    _ => {}
                 },
             }
         }
 
         if let Some(mut err) = self.err() {
-            err.data = token.data;
+            err.data = token.data.to_string();
             err.index = token.index;
             self.err = None;
 
@@ -409,36 +387,6 @@ impl Cursor<'_> {
 }
 
 impl Cursor<'_> {
-    fn advance(&mut self) -> Result<Token, Error> {
-        let first_char = self.bump().unwrap();
-
-        match first_char {
-            '"' => unimplemented!(),
-            // '"' => self.string_value(),
-            '#' => self.comment(),
-            '.' => self.spread_operator(first_char),
-            c if is_whitespace(c) => self.whitespace(),
-            c if is_ident_char(c) => self.ident(),
-            _c @ '-' | _c @ '+' => { self.bump().unwrap(); self.number() },
-            c if is_digit_char(c) => self.number(),
-            '!' => Ok(Token::new(TokenKind::Bang, first_char.into())),
-            '$' => Ok(Token::new(TokenKind::Dollar, first_char.into())),
-            '&' => Ok(Token::new(TokenKind::Amp, first_char.into())),
-            '(' => Ok(Token::new(TokenKind::LParen, first_char.into())),
-            ')' => Ok(Token::new(TokenKind::RParen, first_char.into())),
-            ':' => Ok(Token::new(TokenKind::Colon, first_char.into())),
-            ',' => Ok(Token::new(TokenKind::Comma, first_char.into())),
-            '=' => Ok(Token::new(TokenKind::Eq, first_char.into())),
-            '@' => Ok(Token::new(TokenKind::At, first_char.into())),
-            '[' => Ok(Token::new(TokenKind::LBracket, first_char.into())),
-            ']' => Ok(Token::new(TokenKind::RBracket, first_char.into())),
-            '{' => Ok(Token::new(TokenKind::LCurly, first_char.into())),
-            '|' => Ok(Token::new(TokenKind::Pipe, first_char.into())),
-            '}' => Ok(Token::new(TokenKind::RCurly, first_char.into())),
-            c => Err(Error::new("Unexpected character", c.to_string())),
-        }
-    }
-
     // fn string_value(&mut self) -> Result<Token, Error> {
     //     let c = match self.bump() {
     //         None => {
@@ -545,36 +493,33 @@ impl Cursor<'_> {
             }
         }
 
-        Ok(Token::new(
-            TokenKind::Comment,
-            self.current_str().to_string(),
-        ))
+        Ok(Token::new(TokenKind::Comment, self.current_str()))
     }
 
-    fn spread_operator(&mut self, first_char: char) -> Result<Token, Error> {
-        let mut buf = String::new();
-        buf.push(first_char);
+    // fn spread_operator(&mut self, first_char: char) -> Result<Token, Error> {
+    //     let mut buf = String::new();
+    //     buf.push(first_char);
 
-        match (self.first(), self.second()) {
-            ('.', '.') => {
-                buf.push('.');
-                buf.push('.');
-                self.bump();
-                self.bump();
-            }
-            (a, b) => self.add_err(Error::new(
-                "Unterminated spread operator",
-                format!(".{}{}", a, b),
-            )),
-        }
+    //     match (self.first(), self.second()) {
+    //         ('.', '.') => {
+    //             buf.push('.');
+    //             buf.push('.');
+    //             self.bump();
+    //             self.bump();
+    //         }
+    //         (a, b) => self.add_err(Error::new(
+    //             "Unterminated spread operator",
+    //             format!(".{}{}", a, b),
+    //         )),
+    //     }
 
-        if let Some(mut err) = self.err() {
-            err.data = buf;
-            return Err(err);
-        }
+    //     if let Some(mut err) = self.err() {
+    //         err.data = buf;
+    //         return Err(err);
+    //     }
 
-        Ok(Token::new(TokenKind::Spread, buf))
-    }
+    //     Ok(Token::new(TokenKind::Spread, buf))
+    // }
 
     fn whitespace(&mut self) -> Result<Token, Error> {
         while !self.is_eof() {
@@ -587,7 +532,7 @@ impl Cursor<'_> {
             }
         }
 
-        Ok(Token::new(TokenKind::Whitespace, self.current_str().to_string()))
+        Ok(Token::new(TokenKind::Whitespace, self.current_str()))
     }
 
     fn ident(&mut self) -> Result<Token, Error> {
@@ -600,7 +545,7 @@ impl Cursor<'_> {
             }
         }
 
-        Ok(Token::new(TokenKind::Name, self.current_str().to_string()))
+        Ok(Token::new(TokenKind::Name, self.current_str()))
     }
 
     fn number(&mut self) -> Result<Token, Error> {
@@ -670,9 +615,9 @@ impl Cursor<'_> {
         }
 
         if has_exponent || has_fractional {
-            Ok(Token::new(TokenKind::Float, self.current_str().to_string()))
+            Ok(Token::new(TokenKind::Float, self.current_str()))
         } else {
-            Ok(Token::new(TokenKind::Int, self.current_str().to_string()))
+            Ok(Token::new(TokenKind::Int, self.current_str()))
         }
     }
 }
