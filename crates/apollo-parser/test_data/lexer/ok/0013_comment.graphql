@@ -1,0 +1,5 @@
+# A single line comment
+query {
+  # A field comment
+  field
+}

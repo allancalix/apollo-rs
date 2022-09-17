@@ -30,5 +30,11 @@ fn bench_parser_peek_n(c: &mut Criterion) {
     c.bench_function("parser_peek_n", move |b| b.iter(|| parse_query(query)));
 }
 
-criterion_group!(benches, bench_parser_peek_n);
+fn bench_parser_many_aliases(c: &mut Criterion) {
+    let query = include_str!("testdata/alias.graphql");
+
+    c.bench_function("many_aliases", move |b| b.iter(|| parse_query(query)));
+}
+
+criterion_group!(benches, bench_parser_peek_n, bench_parser_many_aliases);
 criterion_main!(benches);

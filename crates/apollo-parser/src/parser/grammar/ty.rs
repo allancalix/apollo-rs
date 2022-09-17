@@ -24,24 +24,24 @@ pub(crate) fn ty(p: &mut Parser) {
 }
 
 #[derive(Debug)]
-enum TokenTy {
+enum TokenTy<'a> {
     List {
-        nullable: Option<Token>,
-        open_token: Token,
-        close_token: Option<Token>,
-        inner: Box<TokenTy>,
-        comma: Option<Token>,
-        trailing_ws: Option<Token>,
+        nullable: Option<Token<'a>>,
+        open_token: Token<'a>,
+        close_token: Option<Token<'a>>,
+        inner: Box<TokenTy<'a>>,
+        comma: Option<Token<'a>>,
+        trailing_ws: Option<Token<'a>>,
     },
     Named {
-        nullable: Option<Token>,
-        token: Token,
-        comma: Option<Token>,
-        trailing_ws: Option<Token>,
+        nullable: Option<Token<'a>>,
+        token: Token<'a>,
+        comma: Option<Token<'a>>,
+        trailing_ws: Option<Token<'a>>,
     },
 }
 
-fn parse(p: &mut Parser) -> TokenTy {
+fn parse<'a>(p: &mut Parser<'a>) -> TokenTy<'a> {
     let token = p.pop();
     let mut types = match token.kind() {
         T!['['] => {

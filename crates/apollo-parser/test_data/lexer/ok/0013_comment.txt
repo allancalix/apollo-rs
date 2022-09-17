@@ -1,0 +1,13 @@
+COMMENT@0:23 "# A single line comment"
+WHITESPACE@23:24 "\n"
+NAME@24:29 "query"
+WHITESPACE@29:30 " "
+L_CURLY@30:31 "{"
+WHITESPACE@31:34 "\n  "
+COMMENT@34:51 "# A field comment"
+WHITESPACE@51:54 "\n  "
+NAME@54:59 "field"
+WHITESPACE@59:60 "\n"
+R_CURLY@60:61 "}"
+WHITESPACE@61:62 "\n"
+EOF@62:62
