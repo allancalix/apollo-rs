@@ -41,7 +41,7 @@ enum TokenTy<'a> {
     },
 }
 
-fn parse<'a, 'b>(p: &'b mut Parser<'a>) -> TokenTy<'a> {
+fn parse<'a>(p: &mut Parser<'a>) -> TokenTy<'a> {
     let token = p.pop();
     let mut types = match token.kind() {
         T!['['] => {

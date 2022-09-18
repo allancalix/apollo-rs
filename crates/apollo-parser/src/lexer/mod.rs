@@ -74,6 +74,60 @@ impl<'a> Lexer<'a> {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct LexerIterator<'a> {
+    input: &'a str,
+    index: usize,
+    finished: bool,
+}
+
+impl<'a> LexerIterator<'a> {
+    pub fn new(input: &'a str) -> Self {
+        Self {
+            input,
+            index: 0,
+            finished: false,
+        }
+    }
+}
+
+impl<'a> Iterator for LexerIterator<'a> {
+    type Item = Result<Token<'a>, Error>;
+
+    fn next<'b>(&'b mut self) -> Option<Self::Item> {
+        if self.finished {
+            return None;
+        }
+        if self.input.is_empty() {
+            let mut eof = Token::new(TokenKind::Eof, "EOF");
+            eof.index = self.index;
+
+            self.finished = true;
+            return Some(Ok(eof));
+        }
+
+        let mut c = Cursor::new(self.input);
+        let r = c.new_advance();
+
+        match r {
+            Ok(mut token) => {
+                token.index = self.index;
+                self.index += token.data.len();
+
+                self.input = &self.input[token.data.len()..];
+                Some(Ok(token))
+            }
+            Err(mut err) => {
+                err.index = self.index;
+                self.index += err.data.len();
+
+                self.input = &self.input[err.data.len()..];
+                Some(Err(err))
+            }
+        }
+    }
+}
+
 impl<'a> Cursor<'a> {
     fn new_advance(&mut self) -> Result<Token<'a>, Error> {
         #[derive(Debug)]
