@@ -111,6 +111,7 @@ impl<'a> Cursor<'a> {
             StringLiteral,
             StringLiteralStart,
             BlockStringLiteral,
+            BlockStringLiteralBackslash,
             StringLiteralBackslash,
             IntLiteral,
             FloatLiteral,
@@ -257,21 +258,19 @@ impl<'a> Cursor<'a> {
                     }
                 },
                 State::BlockStringLiteral => match c {
+                    '\\' => {
+                        state = State::BlockStringLiteralBackslash;
+                    }
                     '"' => {
-                        if self.eatc('"') {
-                            if self.eatc('"') {
-                                token.data = self.current_str();
+                        // Require two additional quotes to complete the triple quote.
+                        if self.eatc('"') && self.eatc('"') {
+                            token.data = self.current_str();
 
-                                state = State::Done;
-                                break;
-                            }
+                            state = State::Done;
+                            break;
                         }
                     }
-                    curr if is_source_char(curr) => {}
-                    _ => {
-                        state = State::Done;
-                        break;
-                    },
+                    _ => {},
                 },
                 State::StringLiteralStart => match c {
                     '"' => {
@@ -318,6 +317,24 @@ impl<'a> Cursor<'a> {
 
                         state = State::Done;
                         break;
+                    }
+                },
+                State::BlockStringLiteralBackslash => match c {
+                    '"' => {
+                        while self.eatc('"') {}
+
+                        state = State::BlockStringLiteral;
+                    }
+                    curr if is_escaped_char(curr) => {
+                        state = State::BlockStringLiteral;
+                    }
+                    'u' => {
+                        state = State::BlockStringLiteral;
+                    }
+                    _ => {
+                        self.add_err(Error::new("unexpected escaped character", c.to_string()));
+
+                        state = State::BlockStringLiteral;
                     }
                 },
                 State::StringLiteralBackslash => match c {

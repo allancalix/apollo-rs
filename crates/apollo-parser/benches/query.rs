@@ -1,4 +1,4 @@
-use apollo_parser::ast;
+use apollo_parser::{ast, Lexer};
 use criterion::*;
 
 fn parse_query(query: &str) {
@@ -24,10 +24,24 @@ fn parse_query(query: &str) {
     }
 }
 
-fn bench_parser_peek_n(c: &mut Criterion) {
+fn bench_query_parser(c: &mut Criterion) {
     let query = "query ExampleQuery($topProductsFirst: Int) {\n  me { \n    id\n  }\n  topProducts(first:  $topProductsFirst) {\n    name\n    price\n    inStock\n weight\n test test test test test test test test test test test test }\n}";
 
-    c.bench_function("parser_peek_n", move |b| b.iter(|| parse_query(query)));
+    c.bench_function("query_parser", move |b| b.iter(|| parse_query(query)));
+}
+
+fn bench_query_lexer(c: &mut Criterion) {
+    let query = "query ExampleQuery($topProductsFirst: Int) {\n  me { \n    id\n  }\n  topProducts(first:  $topProductsFirst) {\n    name\n    price\n    inStock\n weight\n test test test test test test test test test test test test }\n}";
+
+    c.bench_function("query_lexer", move |b| {
+        b.iter(|| {
+            let lexer = Lexer::new(query);
+
+            for token_res in lexer {
+                let _ = token_res;
+            }
+        })
+    });
 }
 
 fn bench_parser_many_aliases(c: &mut Criterion) {
@@ -36,5 +50,5 @@ fn bench_parser_many_aliases(c: &mut Criterion) {
     c.bench_function("many_aliases", move |b| b.iter(|| parse_query(query)));
 }
 
-criterion_group!(benches, bench_parser_peek_n, bench_parser_many_aliases);
+criterion_group!(benches, bench_query_lexer, bench_query_parser, bench_parser_many_aliases);
 criterion_main!(benches);
