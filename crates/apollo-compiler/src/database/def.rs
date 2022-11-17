@@ -1329,7 +1329,7 @@ fn include_directive() -> DirectiveDefinition {
         repeatable: false,
         directive_locations: Arc::new(vec![
             DirectiveLocation::Field,
-            DirectiveLocation::FragmentDefinition,
+            DirectiveLocation::FragmentSpread,
             DirectiveLocation::InlineFragment,
         ]),
         ast_ptr: None
