@@ -1,6 +1,6 @@
 [package]
 name = "apollo-encoder"
-version = "0.3.2"
+version = "0.3.4"
 authors = [
     "Irina Shestak <shestak.irina@gmail.com>",
     "Benjamin Coenen <benjamin.coenen@apollographql.com>",
@@ -18,6 +18,13 @@ categories = [
     "development-tools",
 ]
 edition = "2021"
+
+[dependencies]
+apollo-parser = { path = "../apollo-parser", version = "0.3.1", optional = true }
+thiserror = "1.0.37"
+
+[features]
+default = ["apollo-parser"]
 
 [dev-dependencies]
 pretty_assertions = "0.7.1"

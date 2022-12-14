@@ -2,13 +2,12 @@ mod cursor;
 mod token;
 mod token_kind;
 
-use std::slice::Iter;
-
-use crate::{lexer::cursor::Cursor, Error};
+use crate::{lexer::cursor::Cursor, Error, LimitTracker};
 
 pub use token::Token;
 pub use token_kind::TokenKind;
-/// Parses tokens into text.
+
+/// Parses GraphQL source text into tokens.
 /// ```rust
 /// use apollo_parser::Lexer;
 ///
@@ -23,65 +22,110 @@ pub use token_kind::TokenKind;
 ///     }
 /// }
 /// ";
-/// let lexer = Lexer::new(query);
-/// assert_eq!(lexer.errors().len(), 0);
-///
-/// let tokens = lexer.tokens();
+/// let (tokens, errors) = Lexer::new(query).lex();
+/// assert_eq!(errors.len(), 0);
 /// ```
-pub struct Lexer {
-    tokens: Vec<Token>,
-    errors: Vec<Error>,
+#[derive(Clone, Debug)]
+pub struct Lexer<'a> {
+    input: &'a str,
+    index: usize,
+    finished: bool,
+    limit: Option<LimitTracker>,
 }
 
-impl Lexer {
-    /// Create a new instance of `Lexer`.
-    pub fn new(mut input: &str) -> Self {
-        let mut tokens = Vec::new();
-        let mut errors = Vec::new();
+impl<'a> Lexer<'a> {
+    /// Create a lexer for a GraphQL source text.
+    ///
+    /// The Lexer is an iterator over tokens and errors:
+    /// ```rust
+    /// use apollo_parser::Lexer;
+    ///
+    /// let query = "# --- GraphQL here ---";
+    ///
+    /// let mut lexer = Lexer::new(query);
+    /// let mut tokens = vec![];
+    /// for token in lexer {
+    ///     match token {
+    ///         Ok(token) => tokens.push(token),
+    ///         Err(error) => panic!("{:?}", error),
+    ///     }
+    /// }
+    /// ```
+    pub fn new(input: &'a str) -> Self {
+        Self {
+            input,
+            index: 0,
+            finished: false,
+            limit: None,
+        }
+    }
 
-        let mut index = 0;
+    pub fn with_limit(mut self, limit: usize) -> Self {
+        self.limit = Some(LimitTracker::new(limit));
+        self
+    }
 
-        while !input.is_empty() {
-            let old_input = input;
+    /// Lex the full source text, consuming the lexer.
+    pub fn lex(self) -> (Vec<Token>, Vec<Error>) {
+        let mut tokens = vec![];
+        let mut errors = vec![];
 
-            if old_input.len() == input.len() {
-                let mut c = Cursor::new(input);
-                let r = c.advance();
-
-                match r {
-                    Ok(mut token) => {
-                        token.index = index;
-                        index += token.data.len();
-
-                        input = &input[token.data.len()..];
-                        tokens.push(token);
-                    }
-                    Err(mut err) => {
-                        err.index = index;
-                        index += err.data.len();
-
-                        input = &input[err.data.len()..];
-                        errors.push(err);
-                    }
-                }
+        for item in self {
+            match item {
+                Ok(token) => tokens.push(token),
+                Err(error) => errors.push(error),
             }
         }
 
-        let mut eof = Token::new(TokenKind::Eof, String::from("EOF"));
-        eof.index = index;
-        tokens.push(eof);
-
-        Self { tokens, errors }
+        (tokens, errors)
     }
+}
 
-    /// Get a reference to the lexer's tokens.
-    pub fn tokens(&self) -> &[Token] {
-        self.tokens.as_slice()
-    }
+impl<'a> Iterator for Lexer<'a> {
+    type Item = Result<Token, Error>;
 
-    /// Get a reference to the lexer's errors.
-    pub fn errors(&self) -> Iter<'_, Error> {
-        self.errors.iter()
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.finished {
+            return None;
+        }
+        if self.input.is_empty() {
+            let mut eof = Token::new(TokenKind::Eof, String::from("EOF"));
+            eof.index = self.index;
+
+            self.finished = true;
+            return Some(Ok(eof));
+        }
+
+        if let Some(limit) = &mut self.limit {
+            limit.consume();
+            if limit.limited() {
+                self.finished = true;
+                return Some(Err(Error::limit(
+                    "token limit reached, aborting lexing",
+                    self.index,
+                )));
+            }
+        }
+
+        let mut c = Cursor::new(self.input);
+        let r = c.advance();
+
+        match r {
+            Ok(mut token) => {
+                token.index = self.index;
+                self.index += token.data.len();
+
+                self.input = &self.input[token.data.len()..];
+                Some(Ok(token))
+            }
+            Err(mut err) => {
+                err.index = self.index;
+                self.index += err.data.len();
+
+                self.input = &self.input[err.data.len()..];
+                Some(Err(err))
+            }
+        }
     }
 }
 
@@ -152,7 +196,7 @@ impl Cursor<'_> {
                     } else if is_line_terminator(c) {
                         self.add_err(Error::new("unexpected line terminator", c.to_string()));
                     }
-                    was_backslash = c == '\\';
+                    was_backslash = c == '\\' && !was_backslash;
                 }
 
                 if !buf.ends_with('"') {
@@ -164,7 +208,7 @@ impl Cursor<'_> {
                 }
 
                 if let Some(mut err) = self.err() {
-                    err.data = buf;
+                    err.set_data(buf);
                     return Err(err);
                 }
 
@@ -188,18 +232,24 @@ impl Cursor<'_> {
 
             while !self.is_eof() {
                 let c = self.bump().unwrap();
-                if c == '"' {
-                    buf.push(c);
-                    if ('"', '"') == (self.first(), self.second()) {
+                let was_backslash = c == '\\';
+
+                if was_backslash && !is_escaped_char(c) && c != 'u' {
+                    self.add_err(Error::new("unexpected escaped character", c.to_string()));
+                }
+
+                buf.push(c);
+
+                if was_backslash {
+                    while self.first() == '"' {
                         buf.push(self.first());
-                        buf.push(self.second());
                         self.bump();
-                        self.bump();
-                        break;
                     }
-                } else if is_source_char(c) {
-                    buf.push(c);
-                } else {
+                } else if c == '"' && ('"', '"') == (self.first(), self.second()) {
+                    buf.push(self.first());
+                    buf.push(self.second());
+                    self.bump();
+                    self.bump();
                     break;
                 }
             }
@@ -235,6 +285,15 @@ impl Cursor<'_> {
                 self.bump();
                 self.bump();
             }
+            ('.', b) => {
+                self.bump();
+                buf.push('.');
+
+                self.add_err(Error::new(
+                    "Unterminated spread operator",
+                    format!("..{}", b),
+                ));
+            }
             (a, b) => self.add_err(Error::new(
                 "Unterminated spread operator",
                 format!(".{}{}", a, b),
@@ -242,7 +301,7 @@ impl Cursor<'_> {
         }
 
         if let Some(mut err) = self.err() {
-            err.data = buf;
+            err.set_data(buf);
             return Err(err);
         }
 
@@ -351,7 +410,7 @@ impl Cursor<'_> {
         }
 
         if let Some(mut err) = self.err() {
-            err.data = buf;
+            err.set_data(buf);
             return Err(err);
         }
 
@@ -411,19 +470,50 @@ fn is_escaped_char(c: char) -> bool {
 
 // SourceCharacter
 //     /[\u0009\u000A\u000D\u0020-\uFFFF]/
-fn is_source_char(c: char) -> bool {
-    matches!(c, '\t' | '\r' | '\n' | '\u{0020}'..='\u{FFFF}')
-}
+// fn is_source_char(c: char) -> bool {
+//     matches!(c, '\t' | '\r' | '\n' | '\u{0020}'..='\u{FFFF}')
+// }
 
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
-    fn tests() {
-        let gql_1 = "\"\nhello";
-        let lexer_1 = Lexer::new(gql_1);
-        dbg!(lexer_1.tokens);
-        dbg!(lexer_1.errors);
+    fn unterminated_string() {
+        let schema = r#"
+type Query {
+    name: String
+    format: String = "Y-m-d\\TH:i:sP" 
+}
+        "#;
+        let (tokens, errors) = Lexer::new(schema).lex();
+        dbg!(tokens);
+        dbg!(errors);
+    }
+
+    #[test]
+    fn token_limit() {
+        let lexer = Lexer::new("type Query { a a a a a a a a a }").with_limit(10);
+        let (tokens, errors) = lexer.lex();
+        assert_eq!(tokens.len(), 10);
+        assert_eq!(
+            errors,
+            &[Error::limit("token limit reached, aborting lexing", 17)]
+        );
+    }
+
+    #[test]
+    fn errors_and_token_limit() {
+        let lexer = Lexer::new("type Query { ..a a a a a a a a a }").with_limit(10);
+        let (tokens, errors) = lexer.lex();
+        // Errors contribute to the token limit
+        assert_eq!(tokens.len(), 9);
+        assert_eq!(
+            errors,
+            &[
+                Error::with_loc("Unterminated spread operator", "..".to_string(), 13),
+                Error::limit("token limit reached, aborting lexing", 18),
+            ],
+        );
     }
 }
