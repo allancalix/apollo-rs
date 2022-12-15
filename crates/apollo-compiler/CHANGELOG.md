@@ -18,19 +18,80 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## Documentation -->
 
-# [x.x.x] (unreleased) - 2021-mm-dd
+# [0.4.1](https://crates.io/crates/apollo-compiler/0.4.1) - 2022-12-13
+## Features
+- **add new APIs - [SimonSapin], [pull/382]**
+  - [`db.find_enum_by_name()`] to look up an `EnumTypeDefinition`.
+  - [`directive.argument_by_name()`] to look up the value of an argument to a directive call.
+  - [`scalar_type.is_built_in()`] to check if a `ScalarTypeDefinition` is defined by the GraphQL spec rather than the schema text.
+  - [`enum_value.directives()`] to access the directives used on an enum value.
+  - `hir::Float` is now `Copy` so it can be passed around more easily; use [`hir_float.get()`] to access the underlying `f64` or [`hir_float.to_i32_checked()`] to convert to an `i32`.
+
+  [SimonSapin]: https://github.com/SimonSapin
+  [pull/382]: https://github.com/apollographql/apollo-rs/pull/382
+  [`db.find_enum_by_name()`]: https://docs.rs/apollo-compiler/0.4.1/apollo_compiler/trait.DocumentDatabase.html#tymethod.find_union_by_name
+  [`directive.argument_by_name()`]: https://docs.rs/apollo-compiler/0.4.1/apollo_compiler/database/hir/struct.Directive.html#method.argument_by_name
+  [`scalar_type.is_built_in()`]: https://docs.rs/apollo-compiler/0.4.1/apollo_compiler/database/hir/struct.ScalarTypeDefinition.html#method.is_built_in
+  [`enum_value.directives()`]: https://docs.rs/apollo-compiler/0.4.1/apollo_compiler/database/hir/struct.EnumValueDefinition.html#method.directives
+  [`hir_float.get()`]: https://docs.rs/apollo-compiler/0.4.1/apollo_compiler/database/hir/struct.Float.html#method.get
+  [`hir_float.to_i32_checked()`]: https://docs.rs/apollo-compiler/0.4.1/apollo_compiler/database/hir/struct.Float.html#method.to_i32_checked
+
+## Fixes
+- **do not panic when creating HIR from a parse tree with syntax errors - [goto-bus-stop], [pull/381]**
+
+  When using the compiler, nodes with syntax errors in them are ignored. As syntax errors are returned
+  from the parser, you can still tell that something is wrong. The compiler just won't crash the whole
+  program anymore.
+
+  [goto-bus-stop]: https://github.com/goto-bus-stop
+  [pull/381]: https://github.com/apollographql/apollo-rs/pull/381
+
+# [0.4.0](https://crates.io/crates/apollo-compiler/0.4.0) - 2022-11-29
 ## Features
 - **add parser recursion limit API - [SimonSapin], [pull/353], [issue/296]**
 
   Calling `ApolloCompiler::with_recursion_limit` instead of `ApolloCompiler::new`
-  makes the compiler call [the corresponding parser constructor][with].
+  makes the compiler configure [the corresponding parser limit][with].
   This limit protects against stack overflow and is enabled either way.
   Configuring it may be useful for example if you’re also configuring the stack size.
 
   [SimonSapin]: https://github.com/SimonSapin
   [pull/353]: https://github.com/apollographql/apollo-rs/pull/353
   [issue/296]: https://github.com/apollographql/apollo-rs/issues/296
-  [with]: https://docs.rs/apollo-parser/0.3.1/apollo_parser/struct.Parser.html#method.with_recursion_limit
+  [with]: https://docs.rs/apollo-parser/0.3.1/apollo_parser/struct.Parser.html#method.recursion_limit
+
+- **expose the repeatable attribute on `DirectiveDefinition` - [allancalix], [pull/367]**
+
+  There was previously no way to access the `repeatable` field on the `DirectiveDefinition` type.
+  This field is required for validation rules.
+
+  [allancalix]: https://github.com/allancalix
+  [pull/367]: https://github.com/apollographql/apollo-rs/pull/367
+
+- **add type extensions - [SimonSapin], [pull/369]**
+
+  apollo-compiler now partially supports GraphQL `extend` types. The `is_subtype` query takes
+  extensions into account.
+
+  Some other parts of the compiler, like validation, do not yet support extensions.
+
+  [SimonSapin]: https://github.com/SimonSapin
+  [pull/369]: https://github.com/apollographql/apollo-rs/pull/369
+
+## Fixes
+- **fix `@include` allowed directive locations - [allancalix], [pull/366]**
+
+  The locations for the `@include` directive wrongly specified `FragmentDefinition` instead of `FragmentSpread`.
+  It now matches the spec.
+
+  [allancalix]: https://github.com/allancalix
+  [pull/366]: https://github.com/apollographql/apollo-rs/pull/366
+
+## Maintenance
+- **avoid double lookup in `SchemaDefinition::{query,mutation,subscription}` - [SimonSapin], [pull/364]**
+
+  [SimonSapin]: https://github.com/SimonSapin
+  [pull/364]: https://github.com/apollographql/apollo-rs/pull/364
 
 # [0.3.0](https://crates.io/crates/apollo-compiler/0.3.0) - 2022-11-02
 ## Breaking
