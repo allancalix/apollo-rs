@@ -487,6 +487,77 @@ impl<'a> Cursor<'a> {
             State::StringLiteralStart => {
                 let curr = self.current_str();
 
+<<<<<<< HEAD
+        if let first_char @ '"' = c {
+            buf.push(first_char);
+
+            while !self.is_eof() {
+                let c = self.bump().unwrap();
+                let was_backslash = c == '\\';
+
+                if was_backslash && !is_escaped_char(c) && c != 'u' {
+                    self.add_err(Error::new("unexpected escaped character", c.to_string()));
+                }
+
+                buf.push(c);
+
+                if was_backslash {
+                    while self.first() == '"' {
+                        buf.push(self.first());
+                        self.bump();
+                    }
+                } else if c == '"' && ('"', '"') == (self.first(), self.second()) {
+                    buf.push(self.first());
+                    buf.push(self.second());
+                    self.bump();
+                    self.bump();
+                    break;
+                }
+            }
+        }
+
+        Ok(Token::new(TokenKind::StringValue, buf))
+    }
+
+    fn comment(&mut self, first_char: char) -> Result<Token, Error> {
+        let mut buf = String::new();
+        buf.push(first_char);
+
+        while !self.is_eof() {
+            let first = self.bump().unwrap();
+            if !is_line_terminator(first) {
+                buf.push(first);
+            } else {
+                break;
+            }
+        }
+
+        Ok(Token::new(TokenKind::Comment, buf))
+    }
+
+    fn spread_operator(&mut self, first_char: char) -> Result<Token, Error> {
+        let mut buf = String::new();
+        buf.push(first_char);
+
+        match (self.first(), self.second()) {
+            ('.', '.') => {
+                buf.push('.');
+                buf.push('.');
+                self.bump();
+                self.bump();
+            }
+            ('.', b) => {
+                self.bump();
+                buf.push('.');
+
+                self.add_err(Error::new("Unterminated spread operator", format!("..{b}")));
+            }
+            (a, b) => self.add_err(Error::new(
+                "Unterminated spread operator",
+                format!(".{a}{b}"),
+            )),
+        }
+=======
                 return Err(Error::new(
                         "unexpected end of data while lexing string value",
                         curr.to_string(),
@@ -494,6 +565,7 @@ impl<'a> Cursor<'a> {
             }
             State::StringLiteral => {
                 let curr = self.drain();
+>>>>>>> 9ebe61c (Remove string allocations for lexing tokens)
 
                 return Err(Error::with_loc(
                         "unterminated string value",
@@ -508,15 +580,86 @@ impl<'a> Cursor<'a> {
                         format!("{}", curr),
                         ));
             }
+<<<<<<< HEAD
+        }
+
+        Ok(Token::new(TokenKind::Name, buf))
+    }
+
+    fn number(&mut self, first_digit: char) -> Result<Token, Error> {
+        let mut buf = String::new();
+        buf.push(first_digit);
+
+        let mut has_exponent = false;
+        let mut has_fractional = false;
+        let mut has_digit = is_digit_char(first_digit);
+
+        while !self.is_eof() {
+            let first = self.first();
+            match first {
+                'e' | 'E' => {
+                    buf.push(first);
+                    self.bump();
+                    if !has_digit {
+                        self.add_err(Error::new(
+                            format!("Unexpected character `{first}` in exponent"),
+                            first.to_string(),
+                        ));
+                    }
+                    if has_exponent {
+                        self.add_err(Error::new(
+                            format!("Unexpected character `{first}`"),
+                            first.to_string(),
+                        ));
+                    }
+                    has_exponent = true;
+                    if matches!(self.first(), '+' | '-') {
+                        buf.push(self.first());
+                        self.bump();
+                    }
+=======
             _ => {
                 if let Some(mut err) = self.err() {
                     err.set_data(self.current_str().to_string());
                     return Err(err);
+>>>>>>> 9ebe61c (Remove string allocations for lexing tokens)
                 }
 
+<<<<<<< HEAD
+                    if !has_digit {
+                        self.add_err(Error::new(
+                            format!("Unexpected character `{first}` before a digit"),
+                            first.to_string(),
+                        ));
+                    }
+
+                    if has_fractional {
+                        self.add_err(Error::new(
+                            format!("Unexpected character `{first}`"),
+                            first.to_string(),
+                        ));
+                    }
+
+                    if has_exponent {
+                        self.add_err(Error::new(
+                            format!("Unexpected character `{first}`"),
+                            first.to_string(),
+                        ));
+                    }
+
+                    has_fractional = true;
+                }
+                first if is_digit_char(first) => {
+                    buf.push(first);
+                    self.bump();
+                    has_digit = true;
+                }
+                _ => break,
+=======
                 token.data = self.current_str();
 
                 return Ok(token);
+>>>>>>> 9ebe61c (Remove string allocations for lexing tokens)
             }
         }
     }
@@ -559,7 +702,7 @@ fn is_line_terminator(c: char) -> bool {
 }
 
 fn is_digit_char(c: char) -> bool {
-    matches!(c, '0'..='9')
+    c.is_ascii_digit()
 }
 
 // EscapedCharacter
