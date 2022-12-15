@@ -26,20 +26,20 @@ pub(crate) fn ty(p: &mut Parser) {
 }
 
 #[derive(Debug)]
-enum TokenTy {
+enum TokenTy<'a> {
     List {
-        nullable: Option<Token>,
-        open_token: Token,
-        close_token: Option<Token>,
-        inner: Option<Box<TokenTy>>,
-        comma: Option<Token>,
-        trailing_ws: Option<Token>,
+        nullable: Option<Token<'a>>,
+        open_token: Token<'a>,
+        close_token: Option<Token<'a>>,
+        inner: Option<Box<TokenTy<'a>>>,
+        comma: Option<Token<'a>>,
+        trailing_ws: Option<Token<'a>>,
     },
     Named {
-        nullable: Option<Token>,
-        token: Token,
-        comma: Option<Token>,
-        trailing_ws: Option<Token>,
+        nullable: Option<Token<'a>>,
+        token: Token<'a>,
+        comma: Option<Token<'a>>,
+        trailing_ws: Option<Token<'a>>,
     },
 }
 
@@ -48,7 +48,7 @@ enum TokenTy {
 /// When errors occur deeper inside nested types like lists, this function
 /// pushes errors *inside* the list to the parser, and returns an Ok() with
 /// an incomplete type.
-fn parse(p: &mut Parser) -> Result<TokenTy, Token> {
+fn parse<'a, 'b>(p: &'b mut Parser<'a>) -> Result<TokenTy<'a>, Token<'a>> {
     let token = p.pop();
     let mut types = match token.kind() {
         T!['['] => {
@@ -111,7 +111,7 @@ fn parse(p: &mut Parser) -> Result<TokenTy, Token> {
     Ok(types)
 }
 
-fn process(ty: TokenTy, p: &mut Parser) {
+fn process<'a>(ty: TokenTy<'a>, p: &mut Parser) {
     match ty {
         TokenTy::List {
             nullable,
@@ -153,7 +153,7 @@ fn process(ty: TokenTy, p: &mut Parser) {
     }
 }
 
-fn process_ignored_tokens(comma: Option<Token>, p: &mut Parser, whitespace: Option<Token>) {
+fn process_ignored_tokens<'a>(comma: Option<Token<'a>>, p: &mut Parser, whitespace: Option<Token<'a>>) {
     if let Some(comma_token) = comma {
         p.push_ast(SyntaxKind::COMMA, comma_token);
     }
@@ -162,11 +162,11 @@ fn process_ignored_tokens(comma: Option<Token>, p: &mut Parser, whitespace: Opti
     }
 }
 
-fn process_list(
+fn process_list<'a>(
     p: &mut Parser,
-    open_token: Token,
-    inner: Option<Box<TokenTy>>,
-    close_token: Option<Token>,
+    open_token: Token<'a>,
+    inner: Option<Box<TokenTy<'a>>>,
+    close_token: Option<Token<'a>>,
 ) {
     let _list_g = p.start_node(SyntaxKind::LIST_TYPE);
     p.push_ast(S!['['], open_token);
@@ -178,7 +178,7 @@ fn process_list(
     }
 }
 
-fn process_named(p: &mut Parser, token: Token) {
+fn process_named<'a>(p: &mut Parser, token: Token<'a>) {
     let named_g = p.start_node(SyntaxKind::NAMED_TYPE);
     let name_g = p.start_node(SyntaxKind::NAME);
     name::validate_name(token.data().to_string(), p);
