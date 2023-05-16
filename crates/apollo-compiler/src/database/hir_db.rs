@@ -49,6 +49,11 @@ pub trait HirDatabase: InputDatabase + AstDatabase {
     #[salsa::invoke(operations)]
     fn operations(&self, file_id: FileId) -> Arc<Vec<Arc<OperationDefinition>>>;
 
+    /// Return all the operations defined in a file.
+    #[salsa::transparent]
+    #[salsa::invoke(operations_weak_type)]
+    fn operations_weak_type(&self, file_id: FileId) -> Vec<OperationDefinition>;
+
     /// Return all the fragments defined in a file.
     #[salsa::invoke(fragments)]
     fn fragments(&self, file_id: FileId) -> ByName<FragmentDefinition>;
@@ -1669,4 +1674,41 @@ fn alias(alias: Option<ast::Alias>) -> Option<Arc<Alias>> {
 
 fn location(file_id: FileId, syntax_node: &SyntaxNode) -> HirNodeLocation {
     HirNodeLocation::new(file_id, syntax_node)
+}
+
+fn operations_weak_type(db: &dyn HirDatabase, file_id: FileId) -> Vec<OperationDefinition> {
+    db.ast(file_id)
+        .document()
+        .syntax()
+        .children()
+        .filter_map(ast::OperationDefinition::cast)
+        .filter_map(|def| operation_definition_weak_type(db, def, file_id))
+        .collect()
+}
+
+// IMPORTANT: This function is essentially a clone of `operation_definition` with
+// one important distinction, it does not force an expensive indexing by calling
+// `db.schema`. This makes using throwaway compilers to extract typed document
+// entities ~20% cheaper.
+fn operation_definition_weak_type(
+    db: &dyn HirDatabase,
+    op_def: ast::OperationDefinition,
+    file_id: FileId,
+) -> Option<OperationDefinition> {
+    let name = op_def.name().map(|n| name_hir_node(n, file_id));
+    let ty = operation_type(op_def.operation_type());
+    let variables = variable_definitions(op_def.variable_definitions(), file_id);
+    // Note the use of None in lieu of looking up the root parent type.
+    let selection_set = selection_set(db, op_def.selection_set(), None, file_id);
+    let directives = directives(op_def.directives(), file_id);
+    let loc = location(file_id, op_def.syntax());
+
+    Some(OperationDefinition {
+        operation_ty: ty,
+        name,
+        variables,
+        selection_set,
+        directives,
+        loc,
+    })
 }
