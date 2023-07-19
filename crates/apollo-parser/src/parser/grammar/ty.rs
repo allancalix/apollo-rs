@@ -30,7 +30,7 @@ pub(crate) fn ty(p: &mut Parser) {
 /// When errors occur deeper inside nested types like lists, this function
 /// pushes errors *inside* the list to the parser, and returns an Ok() with
 /// an incomplete type.
-fn parse<'a>(p: &mut Parser<'a>) -> Result<(), Token<'a>> {
+fn parse<'a>(p: &mut Parser<'a>) -> Result<(), Token> {
     let checkpoint = p.checkpoint_node();
     match p.peek() {
         Some(T!['[']) => {
@@ -50,7 +50,7 @@ fn parse<'a>(p: &mut Parser<'a>) -> Result<(), Token<'a>> {
             let _name_node_guard = p.start_node(SyntaxKind::NAME);
 
             let token = p.pop();
-            name::validate_name(token.data(), p);
+            name::validate_name(token.data(p.source), p);
             p.push_ast(SyntaxKind::IDENT, token);
         }
         _ => return Err(p.pop()),

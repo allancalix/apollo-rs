@@ -71,13 +71,14 @@ pub(crate) use token_text::TokenText;
 /// ```
 #[derive(Debug)]
 pub struct Parser<'a> {
+    source: &'a str,
     lexer: Lexer<'a>,
     /// Store one lookahead token so we don't need to reparse things as much.
-    current_token: Option<Token<'a>>,
+    current_token: Option<Token>,
     /// The in-progress tree.
     builder: Rc<RefCell<SyntaxTreeBuilder>>,
     /// Ignored tokens that should be added to the tree.
-    ignored: Vec<Token<'a>>,
+    ignored: Vec<Token>,
     /// The list of syntax errors we've accumulated so far.
     errors: Vec<crate::Error>,
     /// The limit to apply to parsing.
@@ -92,6 +93,7 @@ impl<'a> Parser<'a> {
         let lexer = Lexer::new(input);
 
         Self {
+            source: input,
             lexer,
             current_token: None,
             builder: Rc::new(RefCell::new(SyntaxTreeBuilder::new())),
@@ -206,7 +208,11 @@ impl<'a> Parser<'a> {
             Error::eof(message, current.index())
         } else {
             // this needs to be the computed location
-            Error::with_loc(message, current.data().to_string(), current.index())
+            Error::with_loc(
+                message,
+                current.data(self.source).to_string(),
+                current.index(),
+            )
         };
         self.push_err(err);
     }
@@ -214,7 +220,7 @@ impl<'a> Parser<'a> {
     /// Create a parser error at the current location and push it into the error vector.
     pub(crate) fn err(&mut self, message: &str) {
         let current = if let Some(current) = self.current() {
-            current
+            current.clone()
         } else {
             return;
         };
@@ -222,7 +228,8 @@ impl<'a> Parser<'a> {
             Error::eof(message, current.index())
         } else {
             // this needs to be the computed location
-            Error::with_loc(message, current.data().to_string(), current.index())
+            let msg = current.data(self.source).to_string();
+            Error::with_loc(message, msg, current.index())
         };
         self.push_err(err);
     }
@@ -239,7 +246,11 @@ impl<'a> Parser<'a> {
             Error::eof(message, current.index())
         } else {
             // this needs to be the computed location
-            Error::with_loc(message, current.data().to_string(), current.index())
+            Error::with_loc(
+                message,
+                current.data(self.source).to_string(),
+                current.index(),
+            )
         };
 
         // Keep the error in the parse tree for position information
@@ -255,7 +266,7 @@ impl<'a> Parser<'a> {
     /// otherwise.
     pub(crate) fn expect(&mut self, token: TokenKind, kind: SyntaxKind) {
         let current = if let Some(current) = self.current() {
-            current
+            current.clone()
         } else {
             return;
         };
@@ -263,7 +274,7 @@ impl<'a> Parser<'a> {
         // TODO(@goto-bus-stop) this allocation is only required if we have an
         // error, but has to be done eagerly here as the &str reference gets
         // invalidated by `self.at()`. Can we avoid that?
-        let data = current.data().to_string();
+        let data = current.data(self.source).to_string();
         let index = current.index();
 
         if self.at(token) {
@@ -297,7 +308,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Gets the next token from the lexer.
-    fn next_token(&mut self) -> Option<Token<'a>> {
+    fn next_token(&mut self) -> Option<Token> {
         for res in &mut self.lexer {
             match res {
                 Err(err) => {
@@ -316,7 +327,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Consume a token from the lexer.
-    pub(crate) fn pop(&mut self) -> Token<'a> {
+    pub(crate) fn pop(&mut self) -> Token {
         if let Some(token) = self.current_token.take() {
             return token;
         }
@@ -327,7 +338,9 @@ impl<'a> Parser<'a> {
 
     /// Insert a token into the AST.
     pub(crate) fn push_ast(&mut self, kind: SyntaxKind, token: Token) {
-        self.builder.borrow_mut().token(kind, token.data())
+        self.builder
+            .borrow_mut()
+            .token(kind, token.data(self.source))
     }
 
     /// Start a node and make it current.
@@ -393,12 +406,15 @@ impl<'a> Parser<'a> {
 
     /// Peek next Token's `data` property.
     pub(crate) fn peek_data(&mut self) -> Option<String> {
-        self.peek_token().map(|token| token.data().to_string())
+        self.peek_token()
+            .cloned()
+            .map(|token| token.data(self.source).to_string())
     }
 
     /// Peek `n` Token's `data` property.
     pub(crate) fn peek_data_n(&self, n: usize) -> Option<String> {
-        self.peek_token_n(n).map(|token| token.data().to_string())
+        self.peek_token_n(n)
+            .map(|token| token.data(self.source).to_string())
     }
 }
 

@@ -89,7 +89,7 @@ impl<'a> Lexer<'a> {
     }
 
     /// Lex the full source text, consuming the lexer.
-    pub fn lex(self) -> (Vec<Token<'a>>, Vec<Error>) {
+    pub fn lex(self) -> (Vec<Token>, Vec<Error>) {
         let mut tokens = vec![];
         let mut errors = vec![];
 
@@ -105,7 +105,7 @@ impl<'a> Lexer<'a> {
 }
 
 impl<'a> Iterator for Lexer<'a> {
-    type Item = Result<Token<'a>, Error>;
+    type Item = Result<Token, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.finished {
@@ -114,7 +114,7 @@ impl<'a> Iterator for Lexer<'a> {
 
         if self.input.is_empty() {
             let mut eof = Token::new(TokenKind::Eof, "");
-            eof.index = self.index;
+            eof.start_index = self.index as u32;
 
             self.finished = true;
             return Some(Ok(eof));
@@ -145,12 +145,12 @@ impl<'a> Iterator for Lexer<'a> {
 }
 
 impl<'a> Cursor<'a> {
-    fn advance(&mut self) -> Result<Token<'a>, Error> {
+    fn advance(&mut self) -> Result<Token, Error> {
         let mut state = State::Start;
         let mut token = Token {
             kind: TokenKind::Eof,
-            data: "",
-            index: self.index(),
+            start_index: self.index() as u32,
+            end_index: (self.index() + 1) as u16,
         };
 
         while let Some(c) = self.bump() {
@@ -187,72 +187,72 @@ impl<'a> Cursor<'a> {
                         }
                         '!' => {
                             token.kind = TokenKind::Bang;
-                            token.data = self.current_str();
+                            token.with_data(self.current_str());
                             return Ok(token);
                         }
                         '$' => {
                             token.kind = TokenKind::Dollar;
-                            token.data = self.current_str();
+                            token.with_data(self.current_str());
                             return Ok(token);
                         }
                         '&' => {
                             token.kind = TokenKind::Amp;
-                            token.data = self.current_str();
+                            token.with_data(self.current_str());
                             return Ok(token);
                         }
                         '(' => {
                             token.kind = TokenKind::LParen;
-                            token.data = self.current_str();
+                            token.with_data(self.current_str());
                             return Ok(token);
                         }
                         ')' => {
                             token.kind = TokenKind::RParen;
-                            token.data = self.current_str();
+                            token.with_data(self.current_str());
                             return Ok(token);
                         }
                         ':' => {
                             token.kind = TokenKind::Colon;
-                            token.data = self.current_str();
+                            token.with_data(self.current_str());
                             return Ok(token);
                         }
                         ',' => {
                             token.kind = TokenKind::Comma;
-                            token.data = self.current_str();
+                            token.with_data(self.current_str());
                             return Ok(token);
                         }
                         '=' => {
                             token.kind = TokenKind::Eq;
-                            token.data = self.current_str();
+                            token.with_data(self.current_str());
                             return Ok(token);
                         }
                         '@' => {
                             token.kind = TokenKind::At;
-                            token.data = self.current_str();
+                            token.with_data(self.current_str());
                             return Ok(token);
                         }
                         '[' => {
                             token.kind = TokenKind::LBracket;
-                            token.data = self.current_str();
+                            token.with_data(self.current_str());
                             return Ok(token);
                         }
                         ']' => {
                             token.kind = TokenKind::RBracket;
-                            token.data = self.current_str();
+                            token.with_data(self.current_str());
                             return Ok(token);
                         }
                         '{' => {
                             token.kind = TokenKind::LCurly;
-                            token.data = self.current_str();
+                            token.with_data(self.current_str());
                             return Ok(token);
                         }
                         '|' => {
                             token.kind = TokenKind::Pipe;
-                            token.data = self.current_str();
+                            token.with_data(self.current_str());
                             return Ok(token);
                         }
                         '}' => {
                             token.kind = TokenKind::RCurly;
-                            token.data = self.current_str();
+                            token.with_data(self.current_str());
                             return Ok(token);
                         }
                         c => {
@@ -266,7 +266,7 @@ impl<'a> Cursor<'a> {
                 State::Ident => match c {
                     curr if is_ident_char(curr) || curr.is_ascii_digit() => {}
                     _ => {
-                        token.data = self.prev_str();
+                        token.with_data(self.prev_str());
 
                         state = State::Done;
                         break;
@@ -275,7 +275,7 @@ impl<'a> Cursor<'a> {
                 State::Whitespace => match c {
                     curr if is_whitespace(curr) => {}
                     _ => {
-                        token.data = self.prev_str();
+                        token.with_data(self.prev_str());
 
                         state = State::Done;
                         break;
@@ -288,7 +288,7 @@ impl<'a> Cursor<'a> {
                     '"' => {
                         // Require two additional quotes to complete the triple quote.
                         if self.eatc('"') && self.eatc('"') {
-                            token.data = self.current_str();
+                            token.with_data(self.current_str());
 
                             state = State::Done;
                             break;
@@ -305,9 +305,9 @@ impl<'a> Cursor<'a> {
                         }
 
                         if self.is_pending() {
-                            token.data = self.prev_str();
+                            token.with_data(self.prev_str());
                         } else {
-                            token.data = self.current_str();
+                            token.with_data(self.current_str());
                         }
 
                         state = State::Done;
@@ -328,7 +328,7 @@ impl<'a> Cursor<'a> {
                             "incomplete unicode escape sequence",
                             c.to_string(),
                         ));
-                        token.data = self.current_str();
+                        token.with_data(self.current_str());
                         state = State::Done;
 
                         break;
@@ -355,7 +355,7 @@ impl<'a> Cursor<'a> {
                             "incomplete unicode escape sequence",
                             c.to_string(),
                         ));
-                        token.data = self.current_str();
+                        token.with_data(self.current_str());
                         state = State::Done;
 
                         break;
@@ -378,7 +378,7 @@ impl<'a> Cursor<'a> {
                 },
                 State::StringLiteral => match c {
                     '"' => {
-                        token.data = self.current_str();
+                        token.with_data(self.current_str());
 
                         state = State::Done;
                         break;
@@ -433,7 +433,7 @@ impl<'a> Cursor<'a> {
                         state = State::ExponentLiteral;
                     }
                     _ => {
-                        token.data = self.prev_str();
+                        token.with_data(self.prev_str());
 
                         state = State::Done;
                         break;
@@ -453,7 +453,7 @@ impl<'a> Cursor<'a> {
                         state = State::ExponentLiteral;
                     }
                     _ => {
-                        token.data = self.prev_str();
+                        token.with_data(self.prev_str());
 
                         state = State::Done;
                         break;
@@ -477,7 +477,8 @@ impl<'a> Cursor<'a> {
                 State::SpreadOperator => match c {
                     '.' => {
                         if self.eatc('.') {
-                            token.data = self.current_str();
+                            token.with_data(self.current_str());
+
                             return Ok(token);
                         }
 
@@ -499,7 +500,7 @@ impl<'a> Cursor<'a> {
                 },
                 State::Comment => match c {
                     curr if is_line_terminator(curr) => {
-                        token.data = self.prev_str();
+                        token.with_data(self.prev_str());
 
                         state = State::Done;
                         break;
@@ -513,8 +514,10 @@ impl<'a> Cursor<'a> {
         match state {
             State::Done => {
                 if let Some(mut err) = self.err() {
-                    err.set_data(token.data.to_string());
-                    err.index = token.index;
+                    // FIXME: This is temp
+                    err.set_data("".to_string());
+                    // err.set_data(token.data.to_string());
+                    err.index = token.start_index as usize;
                     self.err = None;
 
                     return Err(err);
@@ -523,7 +526,7 @@ impl<'a> Cursor<'a> {
                 Ok(token)
             }
             State::Start => {
-                token.index += 1;
+                token.start_index += 1;
                 Ok(token)
             }
             State::StringLiteralStart => {
@@ -540,7 +543,7 @@ impl<'a> Cursor<'a> {
                 Err(Error::with_loc(
                     "unterminated string value",
                     curr.to_string(),
-                    token.index,
+                    token.start_index as usize,
                 ))
             }
             State::SpreadOperator => {
@@ -553,7 +556,7 @@ impl<'a> Cursor<'a> {
                 Err(Error::with_loc(
                     "Unterminated spread operator",
                     data.to_string(),
-                    token.index,
+                    token.start_index as usize,
                 ))
             }
             _ => {
@@ -562,7 +565,7 @@ impl<'a> Cursor<'a> {
                     return Err(err);
                 }
 
-                token.data = self.current_str();
+                token.with_data(self.current_str());
 
                 Ok(token)
             }
@@ -667,7 +670,7 @@ type Query {
         let lexer = Lexer::new(schema);
         let processed_schema = lexer
             .into_iter()
-            .fold(String::new(), |acc, token| acc + token.unwrap().data());
+            .fold(String::new(), |acc, token| acc + token.unwrap().data(schema));
 
         assert_eq!(schema, processed_schema);
     }

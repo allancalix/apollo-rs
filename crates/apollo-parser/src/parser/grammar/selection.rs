@@ -51,7 +51,8 @@ pub(crate) fn selection(p: &mut Parser) {
                 let next_token = p.peek_token_n(2);
                 match next_token {
                     Some(next_token) => {
-                        if next_token.kind() == TokenKind::Name && next_token.data() != "on" {
+                        if next_token.kind() == TokenKind::Name && next_token.data(p.source) != "on"
+                        {
                             fragment::fragment_spread(p);
                         } else if matches!(
                             next_token.kind(),
